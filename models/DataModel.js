@@ -218,6 +218,18 @@ class DataModel {
     }
 
     /**
+     * Retorna todas as turmas de todas as empresas APR
+     * @returns {Array} - Array de códigos de turma únicos e ordenados
+     */
+    getTodasTurmasAPR() {
+        const todasTurmas = new Set();
+        this.turmasPorEmpresa.forEach(turmas => {
+            turmas.forEach(turma => todasTurmas.add(turma));
+        });
+        return Array.from(todasTurmas).sort();
+    }
+
+    /**
      * Retorna as datas disponíveis no dataset
      * @returns {Array} - Array de datas ordenadas
      */
@@ -290,6 +302,12 @@ class DataModel {
         }
 
         return this.rawData.filter(row => {
+            // Garantir que apenas turmas APR sejam incluídas
+            const turmaRow = this.normalizeName(row.TURMA || '');
+            if (!turmaRow.toUpperCase().startsWith('APR')) {
+                return false;
+            }
+
             // Filtro por CNPJ
             if (cnpj) {
                 const rowCnpj = this.normalizeCNPJ(row.CNPJ_EMPRESA || '');
@@ -298,6 +316,7 @@ class DataModel {
                     return false;
                 }
             }
+            // Se cnpj for null, aceita todas as empresas APR
 
             // Filtro por Turma
             if (turma && row.TURMA !== turma) {
@@ -343,9 +362,32 @@ class DataModel {
     /**
      * Gera relatório consolidado dos dados filtrados
      * @param {Array} dadosFiltrados - Array de dados já filtrados
+     * @param {string} dataInicio - Data de início do período filtrado (DD/MM/YYYY)
      * @returns {Object} - Objeto com estatísticas e relatório
      */
-    gerarRelatorio(dadosFiltrados) {
+    gerarRelatorio(dadosFiltrados, dataInicio = null) {
+        // Extrair MÊS e ANO da data de início do filtro
+        let mes = '';
+        let ano = '';
+        if (dataInicio) {
+            const parts = dataInicio.split('/');
+            if (parts.length === 3) {
+                mes = parts[1]; // MM
+                ano = parts[2]; // YYYY
+            }
+        }
+        // Fallback: se não houver dataInicio, tentar extrair da primeira data dos dados filtrados
+        if (!mes && dadosFiltrados.length > 0) {
+            const primeiraData = dadosFiltrados[0].DATA;
+            if (primeiraData) {
+                const parts = primeiraData.split('/');
+                if (parts.length === 3) {
+                    mes = parts[1];
+                    ano = parts[2];
+                }
+            }
+        }
+
         const alunosPorRA = new Map();
 
         // Consolidar dados por aluno
@@ -476,6 +518,8 @@ class DataModel {
                 STATUS: statusFinal,
                 EMPRESA: aluno.EMPRESA,
                 CURSO: aluno.CURSO,
+                MES: mes,
+                ANO: ano,
                 FALTAS_JUSTIFICADAS_DIAS: diasFaltasJustificadas,
                 NUM_FALTAS_JUSTIFICADAS: numFaltasJustificadas,
                 FALTAS_NAO_JUSTIFICADAS_DIAS: diasFaltasNaoJustificadas,
@@ -489,7 +533,14 @@ class DataModel {
         return {
             totalAlunos: relatorio.length,
             totalRegistros: dadosFiltrados.length,
-            relatorio: relatorio.sort((a, b) => a.ALUNO.localeCompare(b.ALUNO))
+            relatorio: relatorio.sort((a, b) => {
+                // Ordenar primeiro por TURMA
+                const turmaCompare = a.TURMA.localeCompare(b.TURMA);
+                if (turmaCompare !== 0) return turmaCompare;
+                
+                // Se TURMA for igual, ordenar por EMPRESA
+                return a.EMPRESA.localeCompare(b.EMPRESA);
+            })
         };
     }
 

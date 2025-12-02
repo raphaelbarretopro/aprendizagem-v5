@@ -10,6 +10,7 @@ class FrequencyController {
         this.dateRange = null;
         this.flatpickrInstance = null;
         this.ALL_TURMAS = '__ALL__';
+        this.ALL_EMPRESAS = '__ALL_EMPRESAS__';
 
         // Elementos DOM
         this.elements = {
@@ -148,6 +149,18 @@ class FrequencyController {
             return;
         }
 
+        // Adicionar opção "Todas as Empresas" no topo
+        const itemAll = document.createElement('div');
+        itemAll.className = 'autocomplete-item autocomplete-item-all';
+        itemAll.innerHTML = `
+            <span class="autocomplete-item-name" style="font-weight: bold; color: #2563eb;">📊 Todas as Empresas</span>
+            <span class="autocomplete-item-cnpj" style="font-style: italic;">Gerar relatório consolidado</span>
+        `;
+        itemAll.addEventListener('click', () => {
+            this.selectTodasEmpresas();
+        });
+        this.elements.empresaDropdown.appendChild(itemAll);
+
         empresas.forEach(empresa => {
             const item = document.createElement('div');
             item.className = 'autocomplete-item';
@@ -191,6 +204,21 @@ class FrequencyController {
     }
 
     /**
+     * Seleciona "Todas as Empresas"
+     */
+    selectTodasEmpresas() {
+        this.selectedEmpresa = {
+            cnpj: this.ALL_EMPRESAS,
+            nome: 'Todas as Empresas'
+        };
+        this.elements.empresaInput.value = '📊 Todas as Empresas';
+        this.hideAutocomplete();
+
+        // Carregar todas as turmas
+        this.loadTodasTurmas();
+    }
+
+    /**
      * Seleciona uma empresa
      */
     selectEmpresa(empresa) {
@@ -225,6 +253,36 @@ class FrequencyController {
         // Adicionar classe ao item atual
         items[currentFocus].classList.add('selected');
         items[currentFocus].scrollIntoView({ block: 'nearest' });
+    }
+
+    /**
+     * Carrega todas as turmas de todas as empresas APR
+     */
+    loadTodasTurmas() {
+        const todasTurmas = this.model.getTodasTurmasAPR();
+        
+        // Limpar select
+        this.elements.turmaSelect.innerHTML = '<option value="">Selecione uma turma</option>';
+
+        // Adicionar opção "Todas as turmas"
+        const optAll = document.createElement('option');
+        optAll.value = this.ALL_TURMAS;
+        optAll.textContent = 'Todas as turmas';
+        this.elements.turmaSelect.appendChild(optAll);
+
+        // Adicionar turmas ordenadas
+        todasTurmas.forEach(turma => {
+            const option = document.createElement('option');
+            option.value = turma;
+            option.textContent = turma;
+            this.elements.turmaSelect.appendChild(option);
+        });
+
+        // Habilitar select
+        this.elements.turmaSelect.disabled = false;
+        
+        // Habilitar grupo de status
+        this.enableStatusCheckboxes();
     }
 
     /**
@@ -387,7 +445,7 @@ class FrequencyController {
 
             // Filtrar dados
             const filtros = {
-                cnpj: this.selectedEmpresa.cnpj,
+                cnpj: this.selectedEmpresa.cnpj === this.ALL_EMPRESAS ? null : this.selectedEmpresa.cnpj,
                 turma: this.selectedTurma === this.ALL_TURMAS ? null : this.selectedTurma,
                 dataInicio: this.dateRange.inicio,
                 dataFim: this.dateRange.fim,
@@ -406,7 +464,7 @@ class FrequencyController {
             this.showStatus('Gerando relatório...');
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            const resultado = this.model.gerarRelatorio(dadosFiltrados);
+            const resultado = this.model.gerarRelatorio(dadosFiltrados, this.dateRange.inicio);
 
             // Exportar para CSV
             this.showStatus('Exportando arquivo...');
@@ -458,6 +516,8 @@ class FrequencyController {
             'STATUS': aluno.STATUS,
             'EMPRESA': aluno.EMPRESA,
             'CURSO': aluno.CURSO,
+            'MES': aluno.MES,
+            'ANO': aluno.ANO,
             'FALTAS JUSTIFICADAS (DIAS)': aluno.FALTAS_JUSTIFICADAS_DIAS,
             'Nº FALTAS JUSTIFICADAS': aluno.NUM_FALTAS_JUSTIFICADAS,
             'FALTAS NÃO JUSTIFICADAS (DIAS)': aluno.FALTAS_NAO_JUSTIFICADAS_DIAS,
@@ -507,6 +567,8 @@ class FrequencyController {
             { wch: 14 },  // STATUS
             { wch: 36 },  // EMPRESA
             { wch: 32 },  // CURSO
+            { wch: 8 },   // MES
+            { wch: 8 },   // ANO
             { wch: 26 },  // FALTAS JUSTIFICADAS (DIAS)
             { wch: 20 },  // Nº FALTAS JUSTIFICADAS
             { wch: 28 },  // FALTAS NÃO JUSTIFICADAS (DIAS)
@@ -600,8 +662,13 @@ class FrequencyController {
         }
 
         // Adicionar worksheet ao workbook
-        XLSX.utils.book_append_sheet(wb, ws, 'Relatório de Frequência');        // Gerar nome do arquivo
-        const filename = `relatorio_frequencia_${this.selectedEmpresa.nome.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.xlsx`;
+        XLSX.utils.book_append_sheet(wb, ws, 'Relatório de Frequência');        
+        
+        // Gerar nome do arquivo
+        const nomeEmpresa = this.selectedEmpresa.cnpj === this.ALL_EMPRESAS 
+            ? 'Todas_Empresas' 
+            : this.selectedEmpresa.nome.replace(/[^a-z0-9]/gi, '_');
+        const filename = `relatorio_frequencia_${nomeEmpresa}_${Date.now()}.xlsx`;
 
         // Fazer download do arquivo Excel
         XLSX.writeFile(wb, filename);
